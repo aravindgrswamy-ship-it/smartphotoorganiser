@@ -1,0 +1,37 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # The face-recognition model (13 MB) is fetched here so you don't have to upload it.
+      - name: Download face-recognition model
+        run: |
+          mkdir -p app/src/main/assets
+          curl -L --fail --retry 3 -o buffalo_s.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip
+          unzip -o -j buffalo_s.zip w600k_mbf.onnx -d app/src/main/assets
+          rm buffalo_s.zip
+          ls -l app/src/main/assets
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build release APK
+        run: gradle assembleRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smart-gallery-apk
+          path: app/build/outputs/apk/release/*.apk
