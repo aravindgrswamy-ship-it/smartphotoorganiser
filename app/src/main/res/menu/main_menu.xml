@@ -25,6 +25,12 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_scanall"
+        android:checkable="true"
+        android:title="Scan all folders (slow)"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_pause"
         android:title="Pause scanning"
         app:showAsAction="never" />
