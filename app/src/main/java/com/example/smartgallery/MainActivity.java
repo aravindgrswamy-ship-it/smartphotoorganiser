@@ -74,7 +74,7 @@ public class MainActivity extends AppCompatActivity implements PhotoAdapter.Host
     private Button bannerBtn, grantBtn;
 
     private Sort sort = Sort.NEWEST;
-    private String folderFilter = null;
+    private volatile String folderFilter = null;
     private int personFilter = -1;
     private String personName = null;
     private boolean onlyText = false;
@@ -295,12 +295,28 @@ public class MainActivity extends AppCompatActivity implements PhotoAdapter.Host
                 db.deleteMissing(ids);
             }
             Store.setPhotos(list);
-            Indexer.get(this).submit(list);
+            Indexer.get(this).submit(scopeOf(list));
             main.post(() -> {
                 selected.retainAll(idsOf(list));
                 refresh();
             });
         });
+    }
+
+    /** Which photos to scan: only the opened folder, unless "Scan all folders" is on. */
+    private List<Photo> scopeOf(List<Photo> src) {
+        boolean all = Indexer.get(this).scanAll();
+        String folder = folderFilter;
+        List<Photo> scope = new ArrayList<>();
+        for (Photo p : src) {
+            if (all || (folder != null && folder.equals(p.folder))) scope.add(p);
+        }
+        return scope;
+    }
+
+    private void startScan() {
+        final List<Photo> snapshot = Store.photos;
+        bg.execute(() -> Indexer.get(this).submit(scopeOf(snapshot)));
     }
 
     private static Set<Long> idsOf(List<Photo> list) {
@@ -448,19 +464,24 @@ public class MainActivity extends AppCompatActivity implements PhotoAdapter.Host
         grantBtn.setVisibility(View.GONE);
         if (!empty) return;
         Boolean model = Indexer.get(this).faceModelReady();
+        boolean noScope = folderFilter == null && !Indexer.get(this).scanAll();
+        String scanHint = noScope
+                ? "\n\nOnly the folder you open is scanned. Tap the Folder chip and pick a folder to scan it, "
+                  + "or turn on \"Scan all folders\" in the menu."
+                : "\n\nThe folder is scanned in the background while the app is open, so results can appear "
+                  + "as scanning continues.";
         if (peopleMode) {
             if (model != null && !model) {
                 emptyText.setText("The face-recognition model is missing from this build, so people can't be told apart. "
                         + "Text search still works.");
             } else {
-                emptyText.setText("No people yet.\n\nPhotos are scanned in the background while the app is open. "
-                        + "People appear here once the same face is found in two or more photos.");
+                emptyText.setText("No people yet." + scanHint
+                        + "\n\nA person appears once the same face is found in two or more photos.");
             }
         } else if (!Store.loaded || Store.photos.isEmpty()) {
             emptyText.setText("No photos found.");
         } else if (onlyText || onlyFaces || personFilter >= 0 || !query.trim().isEmpty()) {
-            emptyText.setText("No matches yet.\n\nPhotos are scanned in the background while the app is open, "
-                    + "so more results can appear as scanning continues.");
+            emptyText.setText("No matches yet." + scanHint);
         } else {
             emptyText.setText("No photos to show.");
         }
@@ -646,6 +667,7 @@ public class MainActivity extends AppCompatActivity implements PhotoAdapter.Host
                 .setItems(labels, (d, which) -> {
                     folderFilter = which == 0 ? null : names.get(which - 1);
                     peopleMode = false;
+                    startScan();   // scan just this folder (photos already scanned are skipped)
                     refresh();
                 })
                 .show();
@@ -717,6 +739,7 @@ public class MainActivity extends AppCompatActivity implements PhotoAdapter.Host
         menu.findItem(R.id.action_delete).setVisible(sel);
         menu.findItem(R.id.action_singles).setVisible(!sel && peopleMode).setChecked(showSingles);
         menu.findItem(R.id.action_strict).setVisible(!sel);
+        menu.findItem(R.id.action_scanall).setVisible(!sel).setChecked(Indexer.get(this).scanAll());
         MenuItem pause = menu.findItem(R.id.action_pause);
         pause.setVisible(!sel);
         pause.setTitle(Indexer.get(this).isPaused() ? "Resume scanning" : "Pause scanning");
@@ -748,6 +771,15 @@ public class MainActivity extends AppCompatActivity implements PhotoAdapter.Host
         }
         if (id == R.id.action_strict) {
             showStrictnessDialog();
+            return true;
+        }
+        if (id == R.id.action_scanall) {
+            Indexer idx = Indexer.get(this);
+            idx.setScanAll(!idx.scanAll());
+            Toast.makeText(this, idx.scanAll() ? "Scanning all folders" : "Scanning only the opened folder",
+                    Toast.LENGTH_SHORT).show();
+            startScan();
+            invalidateOptionsMenu();
             return true;
         }
         if (id == R.id.action_pause) {
