@@ -72,6 +72,15 @@ public final class Indexer {
         return paused;
     }
 
+    /** When false (default) only the folder you opened is scanned. */
+    public boolean scanAll() {
+        return prefs.getBoolean("scanAll", false);
+    }
+
+    public void setScanAll(boolean all) {
+        prefs.edit().putBoolean("scanAll", all).apply();
+    }
+
     public float threshold() {
         return prefs.getFloat("threshold", DEFAULT_THRESHOLD);
     }
